@@ -123,7 +123,7 @@ def main():
 
             # Check if the distance is too short and beep the buzzer
             if dist < 20:
-                buzzer_beep(0.1)
+                buzzer_beep(0.5)
             else:
                 buzzer_off()
 
