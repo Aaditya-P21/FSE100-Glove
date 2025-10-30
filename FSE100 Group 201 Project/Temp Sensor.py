@@ -24,12 +24,22 @@ def read():
     return temperature
 
 def loop():
+    warning_given = False
     while True:
-        if read() != None:
-            print ("Current temperature : %0.2f C" % read())
-            if read() >= 27.0:
-                speak(Too Hot!)
+        temp = read()
+        print(f"Current temperature: {temp:.2f} °C")
 
+        if temp >= 28.0 and not warning_given:
+            speak("Warning temperature above twenty eight degrees")
+            warning_given = True
+
+        elif temp < 28.0 and warning_given:
+            # Reset flag when temperature goes back down
+            warning_given = False
+
+        time.sleep(1)
+
+            
 def destroy():
     pass
 
@@ -38,6 +48,7 @@ def speak(text):
     subprocess.run((
         "espeak \"" + text + "\" 2>/dev/null"
     ).split(" "))  # Construct the command and split into tokens for subprocess.run
+    
 
 if __name__ == '__main__':
     try:
