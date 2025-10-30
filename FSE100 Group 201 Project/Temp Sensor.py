@@ -27,6 +27,8 @@ def loop():
     while True:
         if read() != None:
             print ("Current temperature : %0.2f C" % read())
+            if read() = 27.0:
+                speak(Too Hot!)
 
 def destroy():
     pass
