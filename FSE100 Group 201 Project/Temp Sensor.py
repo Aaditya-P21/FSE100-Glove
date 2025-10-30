@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import os
+import subprocess
+import time
 
 ds18b20 = ''
 
@@ -29,9 +31,16 @@ def loop():
 def destroy():
     pass
 
+def speak(text):
+    text = text.replace(" ", "_")  # Replace spaces with underscores to prevent parsing issues
+    subprocess.run((
+        "espeak \"" + text + "\" 2>/dev/null"
+    ).split(" "))  # Construct the command and split into tokens for subprocess.run
+
 if __name__ == '__main__':
     try:
         setup()
         loop()
     except KeyboardInterrupt:
         destroy()
+
