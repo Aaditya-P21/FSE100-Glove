@@ -1,0 +1,24 @@
+
+Temperature Sensor (DS18B20) Connections
+
+SIG → GPIO4
+VCC → 3V3
+GND → GND
+
+-----------------------
+
+Ultrasonic Sensor (HR-SR04) Connections
+
+Pin → Connection
+VCC → 5V
+Trig → GPIO 17
+Echo → GPIO 18
+GND → GND
+
+-----------------------
+
+Buzzer Module
+
+SIG  → GPIO 27
+VCC  → 3.3V (Raspberry Pi)
+GND  → GND (Raspberry Pi)

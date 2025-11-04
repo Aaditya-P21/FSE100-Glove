@@ -1,149 +1,120 @@
 #!/usr/bin/env python3
+"""
+main.py – Integration of temperature sensor (DS18B20) and ultrasonic distance + buzzer.
+Runs both loops in separate threads.
+"""
 
-import RPi.GPIO as GPIO
+import threading
 import time
-import subprocess
-import os
-import glob
+import sys
+import signal
 
-# --- Constants ---
-# Ultrasonic sensor pins
-TRIG = 11
-ECHO = 12
+# Import the two modules (make sure the files are named exactly as below)
+import Temp_Sensor as temp_mod
+import ultrasonic_buzzer as ultra_mod
 
-# Buzzer pin
-BUZZER_PIN = 13  # You can change this if needed
 
-# --- Setup Functions ---
+# ----------------------------------------------------------------------
+# Global flag to signal threads to stop on Ctrl+C
+# ----------------------------------------------------------------------
+stop_event = threading.Event()
 
-def setup_ultrasonic():
-    GPIO.setmode(GPIO.BOARD)  # Set pin numbering to BOARD (physical pin number)
-    GPIO.setup(TRIG, GPIO.OUT)
-    GPIO.setup(ECHO, GPIO.IN)
 
-def setup_buzzer():
-    GPIO.setmode(GPIO.BOARD)  # Set pin numbering to BOARD (physical pin number)
-    GPIO.setup(BUZZER_PIN, GPIO.OUT)
-    GPIO.output(BUZZER_PIN, GPIO.HIGH)
+def signal_handler(sig, frame):
+    """Handle Ctrl+C gracefully."""
+    print("\n[main] Shutting down...")
+    stop_event.set()
+    # Give a moment for threads to exit cleanly
+    time.sleep(0.5)
+    sys.exit(0)
 
-# --- Ultrasonic Distance Sensor ---
 
-def get_distance():
-    # Send a pulse to TRIG
-    GPIO.output(TRIG, False)  # Make sure TRIG is LOW initially
-    time.sleep(0.000002)  # Small delay to ensure it's off
-    GPIO.output(TRIG, True)  # Send a HIGH pulse
-    time.sleep(0.00001)  # Pulse duration
-    GPIO.output(TRIG, False)  # End pulse
-    
-    # Record the start time
-    while GPIO.input(ECHO) == 0:
-        start = time.time()
-
-    # Record the end time
-    while GPIO.input(ECHO) == 1:
-        end = time.time()
-
-    # Calculate the duration of the pulse
-    duration = end - start
-    
-    # Calculate distance in cm using the formula:
-    # Distance = (Duration * Speed of sound in air) / 2
-    # Speed of sound is roughly 340 meters/second (or 0.034 cm/µs)
-    distance_cm = duration * 34000 / 2
-    
-    return distance_cm
-
-# --- Temperature Sensor ---
-
-def init_temp_sensor():
-    os.system('modprobe w1-gpio')
-    os.system('modprobe w1-therm')
-
-def get_temp_paths():
-    base_dir = '/sys/bus/w1/devices/'
-    devices = glob.glob(base_dir + '28*')
-    if not devices:
-        print("Temperature sensor not found!")
-        return None
-    return devices[0] + '/w1_slave'
-
-def read_temp_raw(device_file):
-    with open(device_file, 'r') as f:
-        return f.readlines()
-
-def read_temperature(device_file):
-    lines = read_temp_raw(device_file)
-    while lines[0].strip()[-3:] != 'YES':
-        time.sleep(0.2)
-        lines = read_temp_raw(device_file)
-    equals_pos = lines[1].find('t=')
-    if equals_pos != -1:
-        temp_string = lines[1][equals_pos+2:]
-        temp_c = float(temp_string) / 1000.0
-        temp_f = temp_c * 9.0 / 5.0 + 32.0
-        return temp_c, temp_f
-    return None, None
-
-# --- Buzzer ---
-
-def buzzer_on():
-    GPIO.output(BUZZER_PIN, GPIO.LOW)
-
-def buzzer_off():
-    GPIO.output(BUZZER_PIN, GPIO.HIGH)
-
-def buzzer_beep(duration=0.5):
-    buzzer_on()
-    time.sleep(duration)
-    buzzer_off()
-
-# --- Text to Speech ---
-
-def speak(text):
-    subprocess.run(["espeak", text])
-
-# --- Main Function ---
-
-def main():
-    print("Starting Raspberry Pi Sensor Suite...")
-
-    # Initialize
-    setup_ultrasonic()
-    setup_buzzer()
-    init_temp_sensor()
-    temp_file = get_temp_paths()
-
+# ----------------------------------------------------------------------
+# Temperature thread – wraps Temp_Sensor.loop()
+# ----------------------------------------------------------------------
+def temperature_thread():
     try:
-        while True:
-            # Get distance from the ultrasonic sensor
-            dist = get_distance()
-            print(f"Distance: {dist:.2f} cm")
-            speak(f"Object is {dist:.1f} centimeters away")
+        temp_mod.setup()
+        warning_given = False
 
-            # Check if the distance is too short and beep the buzzer
-            if dist < 20:
-                buzzer_beep(0.1)
-            else:
-                buzzer_off()
+        while not stop_event.is_set():
+            temp = temp_mod.read()
+            print(f"[Temp] Current temperature: {temp:.2f} °C")
 
-            # Get temperature data
-            if temp_file:
-                temp_c, temp_f = read_temperature(temp_file)
-                if temp_c is not None:
-                    print(f"Temperature: {temp_c:.2f} °C / {temp_f:.2f} °F")
-                    speak(f"The temperature is {temp_c:.1f} degrees Celsius")
-            else:
-                print("Skipping temperature read: No sensor found.")
+            if temp >= 28.0 and not warning_given:
+                temp_mod.speak("Warning temperature above twenty eight degrees")
+                warning_given = True
+            elif temp >= 28.0 and warning_given:
+                temp_mod.speak("Warning")
+            elif temp < 28.0 and warning_given:
+                warning_given = False
 
-            # Add a short delay before the next reading
             time.sleep(1)
 
-    except KeyboardInterrupt:
-        print("\nProgram stopped by user.")
+    except Exception as e:
+        print(f"[Temp] Error: {e}")
     finally:
-        GPIO.cleanup()
+        temp_mod.destroy()
+        print("[Temp] Thread terminated.")
 
-# --- Run Main ---
+
+# ----------------------------------------------------------------------
+# Ultrasonic + buzzer thread – wraps Ultrasonic_buzzer.loop()
+# ----------------------------------------------------------------------
+def ultrasonic_thread():
+    try:
+        ultra_mod.setup()
+
+        while not stop_event.is_set():
+            dis = ultra_mod.distance()
+            print(f"[Ultra] Distance: {dis:.1f} cm")
+
+            if dis < 5:                     # < 5 cm → continuous buzz
+                ultra_mod.buzzer_on()
+            elif dis < 30:                  # 5-30 cm → beeping
+                beep_interval = (dis - 5) / 50.0
+                ultra_mod.beep(beep_interval)
+            else:                           # > 30 cm → off
+                ultra_mod.buzzer_off()
+
+            time.sleep(0.3)
+
+    except Exception as e:
+        print(f"[Ultra] Error: {e}")
+    finally:
+        ultra_mod.destroy()
+        print("[Ultra] Thread terminated.")
+
+
+# ----------------------------------------------------------------------
+# Main entry point
+# ----------------------------------------------------------------------
+def main():
+    # Register signal handler for graceful shutdown
+    signal.signal(signal.SIGINT, signal_handler)
+
+    print("[main] Starting sensors...")
+
+    # Create and start threads
+    t_temp = threading.Thread(target=temperature_thread, daemon=True)
+    t_ultra = threading.Thread(target=ultrasonic_thread, daemon=True)
+
+    t_temp.start()
+    t_ultra.start()
+
+    # Keep main thread alive until stop_event is set
+    try:
+        while not stop_event.is_set():
+            time.sleep(0.1)
+    except KeyboardInterrupt:
+        pass  # Already handled by signal_handler
+
+    # Wait for threads to finish (they will exit quickly because of stop_event)
+    t_temp.join(timeout=1)
+    t_ultra.join(timeout=1)
+
+    print("[main] All done.")
+
+
 if __name__ == "__main__":
     main()
