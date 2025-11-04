@@ -60,7 +60,7 @@ def loop():
         dis = distance()
         print(dis, 'cm')  # Print distance measurement
 
-        if dis < 15.24:  # If the object is within 5 cm, buzz continuously
+        if dis <= 15.24:  # If the object is within 5 cm, buzz continuously
             buzzer_on()
         elif dis < 30:  # If within 6 inches, beep with decreasing interval
             beep_interval = (dis - 5) / 50.0  # Adjust beep interval
