@@ -68,7 +68,7 @@ def loop():
         else:
             buzzer_off()  # Turn off buzzer if object is far
         
-        time.sleep(0.3)
+        time.sleep(0.2)
 
 def destroy():
     """ Cleanup function to reset GPIO settings """
